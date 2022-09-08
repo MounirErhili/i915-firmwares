@@ -1,7 +1,16 @@
 #!/bin/bash
 
 if ! command -v curl >/dev/null 2>&1; then
-	echo "command 'wget': not found!"
+	echo "[ERROR] command 'curl': not found!"
+	if command -v apt >/dev/null 2>&1; then
+		echo "[INFO] run this command 'sudo apt install -y curl'."
+	elif command -v dnf >/dev/null 2>&1; then
+		echo "[INFO] run this command 'sudo dnf install -y curl'."
+	elif command -v pacman >/dev/null 2>&1; then
+		echo "[INFO] run this command 'sudo pacman -Sy --needed --noconfirm curl'."
+	elif command -v opkg >/dev/null 2>&1; then
+		echo "[INFO] run this command 'sudo opkg install -y curl'."
+	fi
 	exit 1
 fi
 
@@ -52,21 +61,37 @@ firmwares=(
 declare -r dl_cmd glink firmwares
 
 for firmware in "${firmwares[@]}"; do
-	echo "downloading ${firmware} ..."
-	eval "${dl_cmd}" "${glink}/${firmware}"
+	if [[ -f "${firmware}" ]]; then
+		# echo "==> file '${firmware}': already downloaded."
+		continue
+	fi
+	echo "==> downloading '${firmware}'..."
+	"${dl_cmd}" "${glink}/${firmware}" || exit 2
 done
 
-read -p "install all firmwares and update the initramfs [Y/n] " -r answer
+echo "==> install all firmwares and update the initramfs? [y/N]"
+read -p " => " -r answer
 
-if [[ "${answer}" == "" ]] || [[ "${answer}" == "y" ]] || [[ "${answer}" == "Y" ]]; then
-	echo "install firmwares..."
-	sudo cp -f -- *.bin /lib/firmware/i915/
-	echo "updating initial ram file system..."
-	sudo update-initramfs -u -k all
-fi
+case "${answer}" in
+y | Y | yes | YES)
+	echo "==> install firmwares..."
+	sudo cp -f -- *.bin /lib/firmware/i915/ || exit 3
+	echo "==> updating initial ram file system..."
+	if command -v update-initramfs >/dev/null 2>&1; then
+		sudo update-initramfs -u -k all || exit 4
+	elif command -v dracut >/dev/null 2>&1; then
+		sudo dracut --regenerate-all
+	elif command -v mkinitcpio >/dev/null 2>&1; then
+		sudo mkinitcpio -P
+	fi
+	;;
+*)
+	exit 0
+	;;
+esac
 
 IFS="${ifs_bk}"
 
 unset answer firmware ifs_bk
 
-echo "done."
+echo -e "\ndone."
